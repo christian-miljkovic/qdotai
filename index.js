@@ -4,7 +4,8 @@ const admin = require('firebase-admin');
 
 var http = require('http');
 var request = require("request");
-const secureCompare = require('secure-compare');
+//const secureCompare = require('secure-compare');
+//const spawn = require('child-process-promise').spawn;
 
 
 
@@ -22,30 +23,50 @@ exports.addRecommendation = functions.database.ref('users/{userId}').onUpdate(ev
   //here we get the data from the .onUpdate function which stands for the 
   //reference to the database location that was changed
   var eventSnapshot = event.data;
-  var trigger = eventSnapshot.child('update'); //we will check later if it should be updated
+  //var trigger = eventSnapshot.child('update'); //we will check later if it should be updated
   const user_id = event.data.key; 
 
 
 
   //now if we find that it is actually triggered we begin the process of making the rec
-  if(trigger.val() == 0){
+  //if(trigger.val() == 0){
   	console.log('A new recommendation is being created.');
 
   	var key = 'AIzaSyCKWI6ghttXWquuf63k9xn-PZCBDOnchS8'; //API key
 
   	//whenever we do .child() we are just getting the specific location and the data there
 
+  	var loc1 = eventSnapshot.child('location').child('l').child('0').val();
+  	var loc2 = eventSnapshot.child('location').child('l').child('1').val();
+  	
+
+  	var location = loc1.toString() + ', ' + loc2.toString();
+
+  	
+
+  	var radius = "500";
+
+  	var type = "food";
+
   	var settings = event.data.child('settings');
 
-  	var cusine = settings.child("cusineData").child(0);
+  	var cusine = settings.child("cuisineData").child(0).val()[0];
 
-  	var price = settings.child("lunchBudget");
+  	var price = settings.child("lunchBudget").val();
 
-  	var diet = settings.child("dietData");
+  	var diet = settings.child("dietData").val();
+
+  	console.log(location);
+  	console.log(cusine);
+  	console.log(price);
+  	console.log(diet);
+
 
   	//setting up the url that we will make the request to
 	var url = 'https://maps.googleapis.com/maps/api/place/textsearch/json?query='+ diet +
-		'+restaurant+' + cusine +'&minprice=' + price+ '&key=' + key;
+		'+restaurant+price level 1' +'&location=' + location +'&radius='+ radius + '&maxprice=' + price +'&type=' + type +'&key=' + key;
+
+	console.log(url);
 
 	//request uses a callback function in order to deal with the asynchronous nature of node
 	request(url, function(err, response, body){
@@ -60,9 +81,16 @@ exports.addRecommendation = functions.database.ref('users/{userId}').onUpdate(ev
 			//database 
 			var json = JSON.parse(body);
 			var rec = json.results[0].name;
+			var address = json.results[0].formatted_address;
+			var price_lvl = json.results[0].price_level;
+			var rate = json.results[0].rating;
 
 			var new_rec = {
-		  		recommendation: rec
+		  		name: rec,
+		  		address: address,
+		  		rating: rate,
+		  		price_level:price_lvl 
+
 		  	};
 
 
@@ -70,19 +98,31 @@ exports.addRecommendation = functions.database.ref('users/{userId}').onUpdate(ev
 			admin.database().ref('users/'+ user_id +'/recommendation').set(new_rec);
 
 			//reset the trigger for alter use
-			admin.database().ref('users/'+ user_id +'/update').set(1);
+			//admin.database().ref('users/'+ user_id +'/update').set(1);
 		}
   	});
-  }
+  
 
-  else
+  /*else
   	console.log('No new recommendation');
-
+*/
 });
 
+/*
+exports.update_rec = functions.database.ref('users/{userId}/location').onUpdate(event =>{
+
+	var user_id = event.parent().name(); 
+
+	console.log(user_id);
+	//set the recommendation section with the set information
+	admin.database().ref('users/'+ user_id +'/update').set(0);
+
+});*/
 
 
-exports.notification_send = functions.https.onRequest((req, res) => {
+
+
+/*exports.notification_send = functions.https.onRequest((req, res) => {
 
 	const key = req.query.key;
 
@@ -95,57 +135,48 @@ exports.notification_send = functions.https.onRequest((req, res) => {
   }
 
   console.log('request made from cron');
-  //end the connection
-  res.end();
 
-  //create the payload for the notification
-  const payload = {
-    notification: {
-      title: 'Your Recommendation is ready!',
-      body: 'It\'s time to eat!',
-    }
-  };
-
-    // Get the list of device tokens.
-  return admin.database().ref('fcmTokens').once('value').then(allTokens => {
-
-    if (allTokens.val()) {
-
-      // Listing all tokens.
-      const tokens = Object.keys(allTokens.val());
-
-      // Send notifications to all tokens.
-
-
-      return admin.messaging().sendToDevice(tokens, payload).then(response => {
-        
-        // For each message check if there was an error.
-        const tokensToRemove = [];
-
-        response.results.forEach((result, index) => {
-
-          const error = result.error;
-
-          if (error) {
-            console.error('Failure sending notification to', tokens[index], error);
-
-            // Cleanup the tokens who are not registered anymore.
-            if (error.code === 'messaging/invalid-registration-token' ||
-                error.code === 'messaging/registration-token-not-registered') {
-
-              tokensToRemove.push(allTokens.ref.child(tokens[index]).remove());
-
-            }
-          }
-        });
-
-        return Promise.all(tokensToRemove);
-
-      });
-    }
-  });
-
+  
+	return loadUsers().then(users => {
+	        let tokens = [];
+	        for (let user of users) {
+	            tokens.push(user.pushToken);
+	        }
+	        let payload = {
+	            notification: {
+	                title: 'Your Personalized recommendation',
+	                body: 'Hope you\'re hungry!',
+	                sound: 'default',
+	                badge: '1'
+	            }
+	        };
+	        return admin.messaging().sendToDevice(tokens, payload);
+	    });
 });
+
+
+function loadUsers() {
+    let dbRef = admin.database().ref('/users');
+    let defer = new Promise((resolve, reject) => {
+        dbRef.once('value', (snap) => {
+            let data = snap.val();
+            console.log(data);
+            let users = [];
+            for (var property in data) {
+                users.push(data[property]);
+            }
+            resolve(users);
+        }, (err) => {
+            reject(err);
+        });
+    });
+    return defer;
+
+        "secure-compare": "^3.0.1",
+    "child-process-promise":"^2.2.1 "
+}*/
+
+
 
 		  	
 
