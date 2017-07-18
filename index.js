@@ -36,8 +36,8 @@ exports.addRecommendation = functions.database.ref('users/{userId}').onUpdate(ev
 
   	//whenever we do .child() we are just getting the specific location and the data there
 
-  	var loc1 = eventSnapshot.child('location').child('l').child('0').val();
-  	var loc2 = eventSnapshot.child('location').child('l').child('1').val();
+  	var loc1 = eventSnapshot.child('location').child('l').child('0').val().toString();
+  	var loc2 = eventSnapshot.child('location').child('l').child('1').val().toString();
   	
 
   	var location = loc1.toString() + ', ' + loc2.toString();
@@ -81,15 +81,26 @@ exports.addRecommendation = functions.database.ref('users/{userId}').onUpdate(ev
 			//database 
 			var json = JSON.parse(body);
 			var rec = json.results[0].name;
-			var address = json.results[0].formatted_address;
-			var price_lvl = json.results[0].price_level;
-			var rate = json.results[0].rating;
+			var add = json.results[0].formatted_address;
+
+			var address = add.substring(0,add.length-15);
+
+			var price_lvl = json.results[0].price_level.toString();
+			var rate = json.results[0].rating.toString();
+
+			var place_id = json.results[0].place_id;
+
+			var lat = json.results[0].geometry.location.lat;
+			var long = json.results[0].geometry.location.lng;			
+
 
 			var new_rec = {
 		  		name: rec,
 		  		address: address,
 		  		rating: rate,
-		  		price_level:price_lvl 
+		  		price_level:price_lvl,
+		  		latitude: lat,
+		  		longitude: long
 
 		  	};
 
@@ -98,10 +109,30 @@ exports.addRecommendation = functions.database.ref('users/{userId}').onUpdate(ev
 			admin.database().ref('users/'+ user_id +'/recommendation').set(new_rec);
 
 			//reset the trigger for alter use
-			//admin.database().ref('users/'+ user_id +'/update').set(1);
+			//admin.database().ref('users/'+ user_id +'/update').set(1);	
 		}
+
   	});
-  
+/*  
+  	request(url2, function(err, response, body){ 
+
+  				var url2 = 'https://maps.googleapis.com/maps/api/place/details/json?placeid='+ place_id +'&key=' + key;
+
+				if(err) {
+					console.log("Request to Places Details API did not go through");
+				}
+
+				else{
+
+					var json = JSON.parse(body);
+					var website = json.result.website;
+
+
+
+					admin.database().ref('users/'+ user_id +'/recommendation/website').set(website);
+				}
+
+			});*/
 
   /*else
   	console.log('No new recommendation');
