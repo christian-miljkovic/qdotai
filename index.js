@@ -40,7 +40,7 @@ exports.addRecommendation = functions.database.ref('users/{userId}').onUpdate(ev
   	var loc2 = eventSnapshot.child('location').child('l').child('1').val().toString();
   	
 
-  	var location = loc1.toString() + ', ' + loc2.toString();
+  	var location = loc1.toString() + ',' + loc2.toString();
 
   	
 
@@ -64,7 +64,7 @@ exports.addRecommendation = functions.database.ref('users/{userId}').onUpdate(ev
 
   	//setting up the url that we will make the request to
 	var url = 'https://maps.googleapis.com/maps/api/place/textsearch/json?query='+ diet +
-		'+restaurant+price level 1' +'&location=' + location +'&radius='+ radius + '&maxprice=' + price +'&type=' + type +'&key=' + key;
+		'+restaurant+price+level+1' +'&location=' + location +'&radius='+ radius + '&maxprice=' + price +'&type=' + type +'&key=' + key;
 
 	console.log(url);
 
@@ -90,8 +90,8 @@ exports.addRecommendation = functions.database.ref('users/{userId}').onUpdate(ev
 
 			var place_id = json.results[0].place_id;
 
-			var lat = json.results[0].geometry.location.lat;
-			var long = json.results[0].geometry.location.lng;			
+			var lat = json.results[0].geometry.location.lat.toString();
+			var long = json.results[0].geometry.location.lng.toString();			
 
 
 			var new_rec = {
@@ -206,6 +206,136 @@ function loadUsers() {
         "secure-compare": "^3.0.1",
     "child-process-promise":"^2.2.1 "
 }*/
+
+
+//you can potentially use just onCreate and then go all the way to the restaurant path
+//because you can get the path through the data snap shot, this is to avoid the recurence problem
+exports.get_restaurant_info = functions.database.ref('playlists/{user_id}').onWrite(event =>{
+
+  //here we get the data from the .onUpdate function which stands for the 
+  //reference to the database location that was changed
+  var eventSnapshot = event.data;
+  //var trigger = eventSnapshot.child('update'); //we will check later if it should be updated
+  const user_id = event.data.key; 
+
+  const data = event.data._delta.restaurants;
+
+  console.log('Building restaurant snapshot');
+
+
+  var key = 'AIzaSyCKWI6ghttXWquuf63k9xn-PZCBDOnchS8'; //API key
+
+
+  	console.log('Entering for loop');
+	for (dict_key in data){
+	    
+	    //this is the restaurant name
+	    const name = dict_key;
+
+	    console.log(name);
+
+		//setting up the url that we will make the request to
+		var url = 'https://maps.googleapis.com/maps/api/place/textsearch/json?query='+ name +'+NYC&type=food&key=' + key;
+
+		console.log('entering request method');
+		//request uses a callback function in order to deal with the asynchronous nature of node
+		request(url, function(err, response, body){
+
+			if(err) {
+				console.log("Request to Places API did not go through");
+			}
+
+			else {
+
+				console.log('building response');
+				//parse the data and then set up the recommendation for insertion into the 
+				//database 
+				var json = JSON.parse(body);
+
+				var photo_data = json.results[0].photos[0];
+
+				var photo_ref = photo_data.photo_reference;
+
+				var max_width = photo_data.width;
+
+				var add = json.results[0].formatted_address;
+
+				var address = add.substring(0,add.length-15);
+
+				var price_lvl = json.results[0].price_level.toString();
+				var rate = json.results[0].rating.toString();
+
+				var place_id = json.results[0].place_id;
+
+				var lat = json.results[0].geometry.location.lat.toString();
+				var long = json.results[0].geometry.location.lng.toString();
+
+
+				var details = {
+			  		address: address,
+			  		rating: rate,
+			  		price_level:price_lvl,
+			  		latitude: lat,
+			  		longitude: long,
+			  		//photoreference: photo_ref,
+			  		max_width: max_width
+
+			  	};
+
+
+			  	//set the recommendation section with the set information
+				admin.database().ref('playlists/'+ user_id +'/restaurants/'+name).set(details);
+				console.log("Restaurant Details Uploaded.");						
+
+
+				//reset the trigger for alter use
+				//admin.database().ref('users/'+ user_id +'/update').set(1);	
+
+
+				console.log("Second request to Photo API");
+
+					var url2 = "https://maps.googleapis.com/maps/api/place/photo?maxwidth="+ max_width +"&photoreference=" +photo_ref +"&key="+key;           
+
+				        request(url2, function(err, response, body){
+
+				          
+
+				          if(err) {
+				            console.log("Request to Photo API did not go through");
+				          }
+
+				          else {   
+
+				          	console.log("Constructing URL");
+				          	var socket = response.socket;
+				          	var host = socket._host;
+				          	var url_path = socket._httpMessage.path;
+
+				          	var total_url = "https://"+host+url_path;
+
+				          	var url_lol = {
+
+				          		url: total_url
+
+				          	}
+
+				          	admin.database().ref('playlists/'+ user_id +'/restaurants/urls/'+name).set(url_lol);
+
+
+				          } 
+
+				        }); 				
+			}
+
+  	});
+
+	
+
+	}
+});
+
+
+
 
 
 
