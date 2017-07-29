@@ -1,3 +1,10 @@
+/*
+author: Christian Miljkovic
+version: 1.0
+date:07/28/17
+*/
+
+
 const functions = require('firebase-functions');
 
 const admin = require('firebase-admin');
@@ -108,47 +115,13 @@ exports.addRecommendation = functions.database.ref('users/{userId}').onUpdate(ev
 		  	//set the recommendation section with the set information
 			admin.database().ref('users/'+ user_id +'/recommendation').set(new_rec);
 
-			//reset the trigger for alter use
-			//admin.database().ref('users/'+ user_id +'/update').set(1);	
 		}
 
   	});
-/*  
-  	request(url2, function(err, response, body){ 
 
-  				var url2 = 'https://maps.googleapis.com/maps/api/place/details/json?placeid='+ place_id +'&key=' + key;
-
-				if(err) {
-					console.log("Request to Places Details API did not go through");
-				}
-
-				else{
-
-					var json = JSON.parse(body);
-					var website = json.result.website;
-
-
-
-					admin.database().ref('users/'+ user_id +'/recommendation/website').set(website);
-				}
-
-			});*/
-
-  /*else
-  	console.log('No new recommendation');
-*/
 });
 
-/*
-exports.update_rec = functions.database.ref('users/{userId}/location').onUpdate(event =>{
 
-	var user_id = event.parent().name(); 
-
-	console.log(user_id);
-	//set the recommendation section with the set information
-	admin.database().ref('users/'+ user_id +'/update').set(0);
-
-});*/
 
 
 
@@ -208,8 +181,13 @@ function loadUsers() {
 }*/
 
 
-//you can potentially use just onCreate and then go all the way to the restaurant path
-//because you can get the path through the data snap shot, this is to avoid the recurence problem
+/*
+This function waits for a write to the playlists database whenever a user creates a playlist
+then begins to get the information for the specific restaurant such as location, photos, menus, etc.
+This is done by making calls to three different Google API's: Places, Details, and Photos. Then once 
+the information is recieved this function updates the database for the newly added restaurant.
+
+*/
 exports.get_restaurant_info = functions.database.ref('playlists/{user_id}').onWrite(event =>{
 
   //here we get the data from the .onUpdate function which stands for the 
@@ -227,6 +205,8 @@ exports.get_restaurant_info = functions.database.ref('playlists/{user_id}').onWr
 
 
   	console.log('Entering for loop');
+
+  	//need to use for loop because of the way you access the children with the DataSnapshot
 	for (dict_key in data){
 	    
 	    //this is the restaurant name
@@ -248,6 +228,7 @@ exports.get_restaurant_info = functions.database.ref('playlists/{user_id}').onWr
 			else {
 
 				console.log('building response');
+
 				//parse the data and then set up the recommendation for insertion into the 
 				//database 
 				var json = JSON.parse(body);
@@ -270,14 +251,17 @@ exports.get_restaurant_info = functions.database.ref('playlists/{user_id}').onWr
 				var lat = json.results[0].geometry.location.lat.toString();
 				var long = json.results[0].geometry.location.lng.toString();
 
+				var place_id = json.results[0].place_id;
 
+
+				//consturct the restaurant details object that you are placing in the database
 				var details = {
 			  		address: address,
 			  		rating: rate,
 			  		price_level:price_lvl,
 			  		latitude: lat,
 			  		longitude: long,
-			  		//photoreference: photo_ref,
+			  		place_id: place_id,
 			  		max_width: max_width
 
 			  	};
@@ -288,43 +272,92 @@ exports.get_restaurant_info = functions.database.ref('playlists/{user_id}').onWr
 				console.log("Restaurant Details Uploaded.");						
 
 
-				//reset the trigger for alter use
-				//admin.database().ref('users/'+ user_id +'/update').set(1);	
-
 
 				console.log("Second request to Photo API");
 
+
+				//constructing the second url for the google photo api using width from previous api
 					var url2 = "https://maps.googleapis.com/maps/api/place/photo?maxwidth="+ max_width +"&photoreference=" +photo_ref +"&key="+key;           
 
-				        request(url2, function(err, response, body){
+					//entering request 
+			        request(url2, function(err, response, body){
 
-				          
+			          
 
-				          if(err) {
-				            console.log("Request to Photo API did not go through");
-				          }
+			          if(err) {
+			            console.log("Request to Photo API did not go through");
+			          }
 
-				          else {   
+			          else {   
 
-				          	console.log("Constructing URL");
-				          	var socket = response.socket;
-				          	var host = socket._host;
-				          	var url_path = socket._httpMessage.path;
+			          	//have to look at the socket because we can't store the body which is an image
+			          	//therefore we are looking at the socket which gives us information such as where
+			          	//google api stores the image
 
-				          	var total_url = "https://"+host+url_path;
+			          	console.log("Constructing URL");
+			          	var socket = response.socket;
+			          	var host = socket._host;
+			          	var url_path = socket._httpMessage.path;
 
-				          	var url_lol = {
+			          	var total_url = "https://"+host+url_path; //have to put two parts together for the url to be valid
 
-				          		url: total_url
+			          	var url_lol = {
 
-				          	}
+			          		restaurant_url: total_url
 
-				          	admin.database().ref('playlists/'+ user_id +'/restaurants/urls/'+name).set(url_lol);
+			          	};
+
+			          	admin.database().ref('playlists/'+ user_id +'/urls/'+name).set(url_lol);
 
 
-				          } 
+			          } 
 
-				        }); 				
+			        });
+
+
+			        //now we are going to get the link to the website so users can check out the menu
+			        console.log("Google Details API URL Construction");
+
+			        //now the third url construction from the place id that we got from the first api call
+			        var url3 = 'https://maps.googleapis.com/maps/api/place/details/json?placeid='+ place_id +'&key='+key; 
+
+			        console.log("Entering 3rd request");
+
+
+			        request(url3, function(err, response, body){
+
+			          
+
+			          if(err) {
+			            console.log("Request to Details API did not go through");
+			          }
+
+			          else {   
+
+			          	//simply getting the website from this (can potentially get more details if need be)
+			          	console.log("Getting website for menu");
+			          	
+			          	var json = JSON.parse(body);
+
+			          	var website = json.result.website; //unlike previous API calls this 
+			          									  //one we do result instead of results
+
+						console.log(website);
+
+
+			          	var website_omg = {
+
+			          		restaurant_menu: website
+
+			          	};
+
+			          	admin.database().ref('playlists/'+ user_id +'/menus/'+name).set(website_omg);
+
+
+			          } 
+
+			        });
+
 			}
 
   	});
