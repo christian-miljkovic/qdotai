@@ -68,10 +68,25 @@ exports.addRecommendation = functions.database.ref('users/{userId}').onUpdate(ev
   	console.log(price);
   	console.log(diet);
 
+  	url = "";
 
-  	//setting up the url that we will make the request to
-	var url = 'https://maps.googleapis.com/maps/api/place/textsearch/json?query='+ diet +
+  	//we only want to be super specific if they are vegan otherwise parameters such as low carb mess up the search
+  	if(diet==='vegan'){
+
+  	//setting up the url that we will make the request to if the person is vegan
+	url += 'https://maps.googleapis.com/maps/api/place/textsearch/json?query='+ diet +
 		'+restaurant+price+level+1' +'&location=' + location +'&radius='+ radius + '&maxprice=' + price +'&type=' + type +'&key=' + key;
+
+  	}
+
+  	else{
+
+  	//setting up the url that we will make the request to if the person does not indicate being vegan
+	url += 'https://maps.googleapis.com/maps/api/place/textsearch/json?query='+
+		'restaurant+price+level+1' +'&location=' + location +'&radius='+ radius + '&maxprice=' + price +'&type=' + type +'&key=' + key;
+
+  	}
+
 
 	console.log(url);
 
